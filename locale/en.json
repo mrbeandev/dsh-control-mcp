@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Harness control (MCP and API)",
+    "description": "Control this DeepSeek Harness from MCP clients and an opt-in HTTP API: list and create sessions, send prompts and read replies, manage workspaces, models, plugins, schedules, goals, terminals and settings. Both surfaces are off until you turn them on in this plugin's page, and every call needs the access token shown there. Read-only mode and blocked endpoints narrow what clients may do.",
+    "detail": "docs/DETAIL.md"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "name": "dsh-control-mcp",
+  "version": "0.1.0",
+  "description": "Control DeepSeek Harness itself from MCP clients and an opt-in HTTP API: sessions, prompts, workspaces, models, plugins, schedules and every other Web UI action.",
+  "author": "mrbeandev and contributors",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.mjs",
+  "icon": "./icon.svg",
+  "bin": { "dsh-control-mcp": "./bin/dsh-control-mcp.mjs" },
+  "exports": {
+    ".": "./index.mjs",
+    "./client": "./lib/client.js",
+    "./core": "./lib/core.mjs",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.mjs",
+    "lib/core.mjs",
+    "lib/http.mjs",
+    "lib/client.js",
+    "client/index.mjs",
+    "bin/dsh-control-mcp.mjs",
+    "locale/*.json",
+    "docs/DETAIL.md",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": { "node": "^22.19.0 || >=24.0.0" },
+  "repository": { "type": "git", "url": "git+https://github.com/mrbeandev/dsh-control-mcp.git" },
+  "homepage": "https://github.com/mrbeandev/dsh-control-mcp#readme",
+  "bugs": { "url": "https://github.com/mrbeandev/dsh-control-mcp/issues" },
+  "publishConfig": { "access": "public" },
+  "keywords": ["dsh", "deepseek-harness", "dsh-plugin", "plugin", "mcp", "model-context-protocol", "mcp-server", "api", "automation", "remote-control"],
+  "scripts": {
+    "build": "node scripts/build-client.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:live": "node scripts/live-smoke.mjs",
+    "test:e2e": "node scripts/e2e-gui.mjs",
+    "verify": "npm run build && npm test && node scripts/check-release.mjs",
+    "check": "npm run verify && npm pack --dry-run",
+    "prepack": "npm run build && npm test",
+    "prepublishOnly": "node scripts/check-release.mjs"
+  },
+  "peerDependencies": { "@deepseek-ai/dsh": ">=0.2.0 <0.3.0" },
+  "peerDependenciesMeta": { "@deepseek-ai/dsh": { "optional": true } },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-ui-plugin-manager"]
+    },
+    "engines": { "dsh": ">=0.2.0 <0.3.0" }
+  }
+}

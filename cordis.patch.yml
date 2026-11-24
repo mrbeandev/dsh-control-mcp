@@ -1,0 +1,5 @@
+# Mount the dsh-control-mcp Host plugin. MCP and API start switched off;
+# turn them on in Plugins → dsh-control-mcp.
+- insert:
+    - id: dsh-control-mcp
+      name: dsh-control-mcp

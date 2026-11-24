@@ -1,0 +1,10 @@
+node_modules/
+*.tgz
+.cache/
+.env
+.env.*
+!.env.example
+*.log
+# Disposable DSH homes and browser profiles for end-to-end tests
+.e2e/
+.private/

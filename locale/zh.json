@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Harness 控制（MCP 与 API）",
+    "description": "通过 MCP 客户端和可选的 HTTP API 控制当前 DeepSeek Harness：列出和创建会话、发送提示并读取回复、管理工作区、模型、插件、定时任务、目标、终端和设置。两种接口默认关闭，需在本插件页面中开启；每次调用都需要页面上显示的访问令牌。只读模式和禁用端点可限制客户端的权限。",
+    "detail": "docs/DETAIL.md"
+  }
+}
