@@ -17,6 +17,11 @@ management plugin, so this package is `dsh-control-mcp` (`dsh-harness-mcp` and
 - `npm run test:e2e` in headless Chrome: page, toggles, token, read-only, blocked
   endpoints, reload persistence, rotation, narrow layout, no console errors.
 
+- `npx dsh-control-mcp` from the installed tarball (the release gate now refuses any
+  package.json field npm would auto-correct on publish; a `./bin/…` path was dropped).
+- Coexistence with the unrelated `dsh-mcp@1.15.4` in the same profile: no shared ids.
+- Uninstall: page and routes are gone and DSH starts despite the leftover config row.
+
 Not yet verified: a real model turn through `dsh_send_prompt` (the disposable
 profile has no provider), registry install after publication, desktop (Electron)
 builds, DSH 0.2.0/0.2.1.

@@ -8,7 +8,7 @@
  * file and nothing private.
  */
 import { readFileSync, readdirSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -27,7 +27,13 @@ check(pkg.bugs?.url === `https://github.com/mrbeandev/${NAME}/issues`, 'bugs URL
 check(pkg.type === 'module', 'package must be ESM');
 check(pkg.exports?.['.'] === './index.mjs' && pkg.exports?.['./client'] === './lib/client.js', 'exports must expose ./index.mjs and ./client');
 check(pkg.exports?.['./locale/*.json'] === './locale/*.json' && pkg.exports?.['./icon'] === './icon.svg', 'exports must expose locale and icon');
-check(pkg.bin?.[NAME] === './bin/dsh-control-mcp.mjs', 'bin must expose the stdio bridge');
+check(pkg.bin?.[NAME] === 'bin/dsh-control-mcp.mjs', 'bin must be "bin/dsh-control-mcp.mjs" (npm publish drops a "./" bin path)');
+// npm silently rewrites invalid package.json fields on publish; refuse any correction.
+const publishCheck = spawnSync('npm', ['publish', '--dry-run', '--ignore-scripts'], { cwd: root, encoding: 'utf8' });
+{
+  const text = `${publishCheck.stdout ?? ''}${publishCheck.stderr ?? ''}`;
+  if (/auto-corrected/.test(text)) problems.push('npm publish would auto-correct package.json; run npm pkg fix and review');
+}
 check(pkg.publishConfig?.access === 'public', 'publishConfig.access must be public');
 check(pkg.engines?.node !== undefined, 'engines.node is required');
 check(pkg.dependencies === undefined || Object.keys(pkg.dependencies).length === 0, 'runtime dependencies are not allowed; harness packages come from the running dsh');

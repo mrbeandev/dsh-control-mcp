@@ -7,7 +7,9 @@
   "type": "module",
   "main": "./index.mjs",
   "icon": "./icon.svg",
-  "bin": { "dsh-control-mcp": "./bin/dsh-control-mcp.mjs" },
+  "bin": {
+    "dsh-control-mcp": "bin/dsh-control-mcp.mjs"
+  },
   "exports": {
     ".": "./index.mjs",
     "./client": "./lib/client.js",
@@ -30,12 +32,32 @@
     "README.md",
     "LICENSE"
   ],
-  "engines": { "node": "^22.19.0 || >=24.0.0" },
-  "repository": { "type": "git", "url": "git+https://github.com/mrbeandev/dsh-control-mcp.git" },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mrbeandev/dsh-control-mcp.git"
+  },
   "homepage": "https://github.com/mrbeandev/dsh-control-mcp#readme",
-  "bugs": { "url": "https://github.com/mrbeandev/dsh-control-mcp/issues" },
-  "publishConfig": { "access": "public" },
-  "keywords": ["dsh", "deepseek-harness", "dsh-plugin", "plugin", "mcp", "model-context-protocol", "mcp-server", "api", "automation", "remote-control"],
+  "bugs": {
+    "url": "https://github.com/mrbeandev/dsh-control-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "plugin",
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "api",
+    "automation",
+    "remote-control"
+  ],
   "scripts": {
     "build": "node scripts/build-client.mjs",
     "test": "node --test test/*.test.mjs",
@@ -46,14 +68,27 @@
     "prepack": "npm run build && npm test",
     "prepublishOnly": "node scripts/check-release.mjs"
   },
-  "peerDependencies": { "@deepseek-ai/dsh": ">=0.2.0 <0.3.0" },
-  "peerDependenciesMeta": { "@deepseek-ai/dsh": { "optional": true } },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.2.0 <0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh": {
+      "optional": true
+    }
+  },
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
-      "inject": ["@deepseek-ai/dsh-client-ui-settings", "@deepseek-ai/dsh-client-ui-plugin-manager"]
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ]
     },
-    "engines": { "dsh": ">=0.2.0 <0.3.0" }
+    "engines": {
+      "dsh": ">=0.2.0 <0.3.0"
+    }
   }
 }
