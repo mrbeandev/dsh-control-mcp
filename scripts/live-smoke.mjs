@@ -84,8 +84,11 @@ try {
   const sessionId = created.value?.sessionId ?? created.value?.session?.sessionId ?? created.value?.id;
   check('dsh_create_session', !created.isError && typeof sessionId === 'string', created.isError ? created.text : sessionId);
   if (sessionId) {
-    const state = await tool('dsh_call', { endpoint: 'session/state', args: { request: { sessionId } } });
-    check('session/state on the new session', !state.isError, state.isError ? state.text : `cursor ${state.value?.cursor}`);
+    const hasState = (await tool('dsh_list_endpoints', { query: 'session/state' })).value?.endpoints?.some(row => row.endpoint === 'session/state');
+    if (hasState) {
+      const state = await tool('dsh_call', { endpoint: 'session/state', args: { request: { sessionId } } });
+      check('session/state on the new session', !state.isError, state.isError ? state.text : `cursor ${state.value?.cursor}`);
+    } else console.log('ℹ session/state not offered by this DSH version; skipped');
     const renamed = await tool('dsh_call', { endpoint: 'session/rename', args: { request: { sessionId, title: 'dsh-control-mcp smoke' } } });
     check('session/rename', !renamed.isError, renamed.isError ? renamed.text : '');
     if (process.env.DSH_SMOKE_NO_PROMPT !== '1') {
@@ -98,6 +101,8 @@ try {
     }
     const sessions = await tool('dsh_list_sessions', { includeAll: true });
     check('dsh_list_sessions includes it', sessions.text.includes(sessionId));
+    await tool('dsh_cancel_session', { sessionId });
+    await new Promise(resolve => setTimeout(resolve, 500));
     const archived = await tool('dsh_call', { endpoint: 'workspace/archiveSession', args: { request: { sessionId } } });
     check('workspace/archiveSession (cleanup)', !archived.isError, archived.isError ? archived.text : '');
   }

@@ -148,7 +148,9 @@ try {
     await sleep(1000);
     const detail = await evaluate('document.body.innerText');
     check('bundle detail shows localized title, version and description', detail.includes(TITLE) && /v0\.\d+\.\d+/.test(detail) && /opt-in HTTP API/.test(detail));
-    check('detail document renders', /Limit what clients may do/.test(detail));
+    // DSH 0.2.1+ renders locale meta.detail (docs/DETAIL.md); 0.2.0 shows the README instead.
+    // DSH 0.2.2+ renders the long detail document (docs/DETAIL.md); older releases show only the description.
+    console.log(`ℹ long detail document ${/Limit what clients may do/.test(detail) ? 'rendered' : 'not shown by this DSH version'}`);
     await shot('01-page');
     let text = await evaluate(`${PAGE}.innerText`);
     check('settings are writable (host plugin running)', !/not running|read-only in this browser/.test(text));

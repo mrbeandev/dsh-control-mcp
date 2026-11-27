@@ -26,7 +26,7 @@ export const inject = ['typert', 'typertGateway', 'connection', 'webServer'];
 const LOG_PREFIX = 'dsh-control-mcp:';
 export const TOKEN_SCOPE = 'dsh-control-mcp';
 export const TOKEN_ID = 'access-token';
-export const SUPPORTED_DSH_RANGE = Object.freeze({ min: '0.2.0', below: '0.3.0' });
+export const SUPPORTED_DSH_RANGE = Object.freeze({ min: '0.2.0-0', below: '0.3.0-0' });
 
 const PLUGIN_VERSION = (() => {
   try {
@@ -150,10 +150,12 @@ export function createTokenStore(ctx, logger) {
 
 /** The bridge lib/core.mjs works on, over the live gateway. */
 export function createBridge(ctx, config, peer) {
+  // DSH 0.2.0 has no Peer API; its gateway runs calls without a peer as the operator (owner).
+  const withPeer = peer === undefined ? {} : { peer };
   return {
     list: () => ctx.typert.local.list(),
-    invoke: (namespace, method, args, signal) => ctx.typertGateway.invoke({ namespace, method, args, peer, ...(signal ? { signal } : {}) }),
-    stream: (namespace, method, args, signal) => ctx.typertGateway.stream({ namespace, method, args, peer, ...(signal ? { signal } : {}) }),
+    invoke: (namespace, method, args, signal) => ctx.typertGateway.invoke({ namespace, method, args, ...withPeer, ...(signal ? { signal } : {}) }),
+    stream: (namespace, method, args, signal) => ctx.typertGateway.stream({ namespace, method, args, ...withPeer, ...(signal ? { signal } : {}) }),
     settings: () => settingsFrom(config),
     info: () => ({ plugin: name, pluginVersion: PLUGIN_VERSION, dshVersion: harness?.version }),
   };
@@ -166,15 +168,38 @@ export async function apply(ctx, config = {}) {
   }
   // One owner Peer for every call this plugin makes; disposed with the plugin.
   // `interactions: 'none'`: it never answers forwarded approvals or questions.
-  const peer = ctx.connection.createPeer({ principal: { kind: 'owner' }, interactions: 'none' });
+  // DSH 0.2.1+: a dedicated owner Peer. DSH 0.2.0: no Peer API, calls run as the operator.
+  const peer = typeof ctx.connection.createPeer === 'function'
+    ? ctx.connection.createPeer({ principal: { kind: 'owner' }, interactions: 'none' })
+    : undefined;
   const bridge = createBridge(ctx, config, peer);
   const tokens = createTokenStore(ctx, logger);
   await tokens.load();
 
+  /**
+   * True for a request DSH itself admits as the owner: the signed-in browser
+   * session, or an owner API cookie from /connect. Either already has full
+   * control of this harness, so it may read this plugin's token.
+   * (0.2.0 admits the operator; 0.2.1/0.2.2 the shared browserPeer; 0.2.3+
+   * the authentication provider's owner Peer.)
+   */
+  // DSH 0.2.3+ splits authentication into `connection.authentication`, and
+  // `connection.admit` only works from a context that injects it. Older
+  // releases have no such service, so `admitCtx` stays the plugin context.
+  let admitCtx = ctx;
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['connection', 'connection.authentication'], inner => {
+      admitCtx = inner;
+      inner.effect(() => () => { admitCtx = ctx; }, 'dsh-control-mcp: owner admission');
+    });
+  }
   const isOwnerBrowser = req => {
     try {
-      const admission = ctx.connection.admit(req);
-      return 'peer' in admission && admission.peer === ctx.connection.browserPeer;
+      const admission = admitCtx.connection.admit(req);
+      if (!('peer' in admission) || admission.peer === undefined) return false;
+      const admitted = admission.peer;
+      if (admitted === ctx.connection.browserPeer || admitted === ctx.connection.operator) return true;
+      return admitted.principal?.kind === 'owner' && admitted.signal?.aborted !== true;
     } catch {
       return false;
     }
@@ -186,8 +211,11 @@ export async function apply(ctx, config = {}) {
     isOwnerBrowser,
     warn: message => logger.warn(`${LOG_PREFIX} ${message}`),
   });
-  ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: ROUTE_PREFIX, handler }), 'dsh-control-mcp: HTTP routes');
-  ctx.effect(() => () => peer.dispose?.(), 'dsh-control-mcp: owner peer');
+  // `auth: 'anonymous'`: DSH 0.2.3+ otherwise requires a browser session for every
+  // route. This plugin authenticates each request itself (bearer token, or the
+  // owner browser session for the token routes). Earlier releases ignore the field.
+  ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: ROUTE_PREFIX, handler, auth: 'anonymous' }), 'dsh-control-mcp: HTTP routes');
+  if (peer !== undefined) ctx.effect(() => () => peer.dispose?.(), 'dsh-control-mcp: owner peer');
 
   const s = settingsFrom(config);
   let origin = '';

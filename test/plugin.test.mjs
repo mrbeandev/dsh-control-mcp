@@ -79,11 +79,35 @@ describe('Host entry', () => {
     assert.equal(routes().length, 1);
     assert.equal(routes()[0].path, '/dsh-control-mcp');
     assert.equal(routes()[0].kind, 'prefix');
+    assert.equal(routes()[0].auth, 'anonymous', 'DSH 0.2.3+ must let bearer-token callers through');
     assert.ok(logs.some(([level, message]) => level === 'info' && /ready at http:\/\/127\.0\.0\.1:3080\/dsh-control-mcp \(mcp off, api off\)/.test(message)));
     // The credential store is only used when running under dsh; outside it falls back to memory.
     assert.ok(records.size === 1 || logs.some(([level, m]) => level === 'warn' && /no credential store/.test(m)));
     for (const effect of effects) await effect.dispose?.();
     assert.equal(routes().length, 0, 'route removed on dispose');
+  });
+});
+
+describe('DSH 0.2.0 compatibility', () => {
+  it('runs without the Peer API: calls omit peer and the operator is the owner browser', async () => {
+    const { ctx, calls, routes } = fakeCtx();
+    const operator = { id: 'operator' };
+    delete ctx.connection.createPeer;
+    delete ctx.connection.browserPeer;
+    ctx.connection.operator = operator;
+    ctx.connection.admit = req => (req.headers.cookie === 'ok' ? { peer: operator } : { rejection: 401 });
+    await apply(ctx, { mcpEnabled: true });
+    const bridge = createBridge(ctx, {}, undefined);
+    await bridge.invoke('session', 'state', {});
+    assert.equal('peer' in calls[0], false);
+    const route = routes()[0];
+    const respond = async headers => {
+      const res = { status: 0, body: '', headersSent: false, writeHead(status) { this.status = status; this.headersSent = true; }, end(body) { this.body = body ?? ''; }, on() {} };
+      await route.handler({ url: '/dsh-control-mcp/token', method: 'GET', headers: { host: 'h', ...headers } }, res);
+      return res;
+    };
+    assert.equal((await respond({ cookie: 'ok' })).status, 200);
+    assert.equal((await respond({})).status, 401);
   });
 });
 
@@ -162,5 +186,23 @@ describe('stdio bridge', () => {
     assert.equal(lines.length, 3);
     assert.ok(lines.some(line => line.error?.code === -32700));
     assert.deepEqual(lines.filter(line => line.result).map(line => line.result.echo).sort(), ['initialize', 'tools/list']);
+  });
+});
+
+describe('DSH 0.2.3 owner admission', () => {
+  it('accepts an owner Peer from the authentication provider and refuses other principals', async () => {
+    const { ctx, routes } = fakeCtx();
+    const providerPeer = { id: 'provider-owner', principal: { kind: 'owner' }, signal: new AbortController().signal };
+    const viewer = { id: 'viewer', principal: { kind: 'liveshare-viewer' }, signal: new AbortController().signal };
+    ctx.connection.admit = req => (req.headers.cookie === 'ok' ? { peer: providerPeer } : req.headers.cookie === 'viewer' ? { peer: viewer } : { rejection: 401 });
+    await apply(ctx, {});
+    const respond = async headers => {
+      const res = { status: 0, headersSent: false, writeHead(status) { this.status = status; this.headersSent = true; }, end() {}, on() {} };
+      await routes()[0].handler({ url: '/dsh-control-mcp/token', method: 'GET', headers: { host: 'h', ...headers } }, res);
+      return res.status;
+    };
+    assert.equal(await respond({ cookie: 'ok' }), 200);
+    assert.equal(await respond({ cookie: 'viewer' }), 401);
+    assert.equal(await respond({}), 401);
   });
 });

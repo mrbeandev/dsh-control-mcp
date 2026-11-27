@@ -1,14 +1,53 @@
 # dsh-control-mcp
 
-Control [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) itself from MCP clients and an opt-in HTTP API.
+Control [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH) **itself** from MCP clients and an opt-in HTTP API.
 
-Once you switch it on, an MCP client such as Claude Code, Claude Desktop, Codex, Cursor or another DSH can list and create sessions, send prompts and read the replies, and manage workspaces, models, plugins, schedules, goals, terminals and settings. It uses the same Remote API as the DSH web GUI, so a call has the same validation and effects as clicking through the GUI.
+[![npm version](https://img.shields.io/npm/v/dsh-control-mcp.svg)](https://www.npmjs.com/package/dsh-control-mcp)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.1%20%E2%86%92%20%3C0.3.0-informational.svg)](#supported-dsh-versions)
+[![Check](https://github.com/mrbeandev/dsh-control-mcp/actions/workflows/check.yml/badge.svg)](https://github.com/mrbeandev/dsh-control-mcp/actions/workflows/check.yml)
+
+- **Source code:** [github.com/mrbeandev/dsh-control-mcp](https://github.com/mrbeandev/dsh-control-mcp)
+- **npm package:** [npmjs.com/package/dsh-control-mcp](https://www.npmjs.com/package/dsh-control-mcp)
+- **Issues:** [github.com/mrbeandev/dsh-control-mcp/issues](https://github.com/mrbeandev/dsh-control-mcp/issues)
+
+Once you switch it on, an MCP client (Claude Code, Claude Desktop, Codex, Cursor, another DSH…) or your own script can list and create sessions, send prompts and read the replies, and manage workspaces, models, plugins, schedules, goals, terminals and settings. It speaks the same Remote API the DSH web GUI uses, so every call gets the same validation and has the same effect as the matching click in the GUI.
 
 - **MCP server**: Streamable HTTP at `/dsh-control-mcp/mcp`, plus a bundled stdio bridge (`npx -y dsh-control-mcp`).
 - **HTTP API**: JSON and Server-Sent Events at `/dsh-control-mcp/api/v1`.
-- **Off by default.** Turn each surface on in **Plugins → dsh-control-mcp**.
-- **One bearer token** for both surfaces, kept in the DSH credential store. You can show, copy and rotate it on the plugin page.
+- **Off by default.** Turn each surface on in **Plugins → dsh-control-mcp**; changes apply at once.
+- **One bearer token** for both, kept in the DSH credential store. Show, copy and rotate it on the plugin page.
 - **Read-only mode** and **blocked endpoint patterns** limit what clients may do.
+
+## Supported DSH versions
+
+**Supported range: DSH `0.2.0-rc.1` up to (not including) `0.3.0`** (`engines.dsh: ">=0.2.0-0 <0.3.0-0"`, prereleases included). Check yours with `dsh --version`.
+
+| DSH version | npm tag (at the time of this release) | Status |
+|---|---|---|
+| `0.2.3-alpha.2` | `alpha` | ✅ Tested |
+| `0.2.2-rc.5` | `latest`, `next` | ✅ Tested |
+| `0.2.2-rc.3` | — | ✅ Tested |
+| `0.2.1-rc.5` | — | ✅ Tested |
+| `0.2.0-rc.2` | — | ✅ Tested |
+| other releases from `0.2.0-rc.1` up to `0.3.0` | — | ⚠️ Untested, expected to work |
+| older than `0.2.0-rc.1` (0.1.x) | — | ❌ Not supported |
+| `0.3.0` and newer (prereleases included) | — | ❌ Refused by DSH until tested |
+
+"Tested" means the packed tarball was installed into a disposable DSH home for that exact version, and both the headless-Chrome page test and the live MCP/API test passed (see [LOCAL-SETUP.md](./LOCAL-SETUP.md)).
+
+What differs between versions:
+
+| Feature | 0.2.0 | 0.2.1 | 0.2.2+ |
+|---|---|---|---|
+| All endpoints, `dsh_call`, `dsh_stream`, HTTP API | ✅ | ✅ | ✅ |
+| `dsh_send_prompt` with `wait` | ✅ polls `session/list` | ✅ polls `session/list` | ✅ native `session/wait` |
+| Calls run as a dedicated peer that never answers approvals | — (runs as the operator) | ✅ | ✅ |
+| Long detail page under Plugins | README only | README only | ✅ |
+
+Each harness version exposes its own set of endpoints; `dsh_list_endpoints` always shows what *your* DSH offers.
+
+**Node.js:** `^22.19.0` or `>=24.0.0`. The plugin has no runtime dependencies and needs no other community plugin.
 
 ## Install
 
@@ -18,7 +57,7 @@ dsh plugin --profile web add dsh-control-mcp
 
 Or open **Plugins → Add plugin** in the GUI and enter `dsh-control-mcp`. Restart DSH if the plugin page does not appear.
 
-Requires DSH `>=0.2.0 <0.3.0` and Node.js 22.19 or later.
+See [Supported DSH versions](#supported-dsh-versions).
 
 ## Turn it on
 
@@ -82,7 +121,7 @@ Use the address of *your* DSH web server; the plugin page fills it in for you.
 | `dsh_call` | Call any unary endpoint, e.g. `pluginManager/setPluginEnabled`. |
 | `dsh_stream` | Read a stream endpoint (e.g. `job/list`) for a bounded time. |
 
-**One MCP tool per endpoint** on the plugin page also lists every endpoint (about 200 on DSH 0.2.2) as its own `dsh__<namespace>__<method>` tool. Many clients handle the 14 tools above better.
+**One MCP tool per endpoint** on the plugin page also lists every endpoint (150–220 depending on DSH version and plugins) as its own `dsh__<namespace>__<method>` tool. Many clients handle the 14 tools above better.
 
 In read-only mode, write tools are hidden and write calls are refused.
 
@@ -135,7 +174,7 @@ The Host plugin (`index.mjs`) registers one prefix route, `/dsh-control-mcp`, on
 | Credential record | `dsh-control-mcp/access-token` (grant) |
 | Config fields (all volatile) | `mcpEnabled`, `apiEnabled`, `readOnly`, `exposeAllEndpoints`, `blockedEndpoints`, `maxResultBytes` |
 | Log prefix | `dsh-control-mcp:` |
-| Injected Host services | `typert`, `typertGateway`, `connection`, `webServer`; optional `credentials` |
+| Injected Host services | `typert`, `typertGateway`, `connection`, `webServer`; optional `credentials`, `connection.authentication` (DSH 0.2.3+) |
 | Injected client packages | `@deepseek-ai/dsh-client-ui-settings`, `@deepseek-ai/dsh-client-ui-plugin-manager` |
 
 ### Source layout
@@ -154,6 +193,7 @@ The Host plugin (`index.mjs`) registers one prefix route, `/dsh-control-mcp`, on
 ```sh
 npm run verify     # build client bundle, unit tests, release gate (metadata, identities, packed files)
 npm pack --dry-run
+scripts/version-matrix.sh ./dsh-control-mcp-0.1.0.tgz /path/to/dsh/bin [port]   # one DSH version, end to end
 ```
 
 `LOCAL-SETUP.md` covers testing against a disposable DSH profile, including the live MCP/API smoke test (`npm run test:live`) and the headless-Chrome page test (`npm run test:e2e`).

@@ -6,6 +6,22 @@ First release. The npm name `dsh-mcp` was already taken by an unrelated MCP
 management plugin, so this package is `dsh-control-mcp` (`dsh-harness-mcp` and
 `dsh-self-mcp` were also free when checked on 2026-11-24 and were left unclaimed).
 
+### Version matrix (2026-11-27, Node 24, Linux, `scripts/version-matrix.sh`)
+
+| DSH | Page test | Live MCP/API test |
+|---|---|---|
+| 0.2.3-alpha.2 | 37/37 | 28/28 |
+| 0.2.2-rc.5 | 37/37 | 28/28 |
+| 0.2.1-rc.5 | 37/37 | 27/27 (no `session/state` endpoint) |
+| 0.2.0-rc.2 | 37/37 | 27/27 (no `session/state` endpoint) |
+
+Compatibility fixes made for this matrix: prerelease-inclusive range
+(`>=0.2.0-0 <0.3.0-0`; every DSH release so far is a prerelease, and
+`>=0.2.0` rejected 0.2.0-rc.*), DSH 0.2.0 without the Peer API, 0.2.0 without
+precomputed JSON Schemas, 0.2.0/0.2.1 without `session/wait`/`session/state`
+and with a required `throughSeq`, and 0.2.3's anonymous route policy and
+`connection.authentication` service.
+
 ### Verified locally (2026-11-24, DSH 0.2.2-rc.3, Node 24, Linux)
 
 - `npm run verify`: unit tests, release gate, packed file list.
@@ -24,7 +40,7 @@ management plugin, so this package is `dsh-control-mcp` (`dsh-harness-mcp` and
 
 Not yet verified: a real model turn through `dsh_send_prompt` (the disposable
 profile has no provider), registry install after publication, desktop (Electron)
-builds, DSH 0.2.0/0.2.1.
+builds.
 
 ### Before publishing
 

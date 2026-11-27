@@ -69,7 +69,7 @@
     "prepublishOnly": "node scripts/check-release.mjs"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": ">=0.2.0 <0.3.0"
+    "@deepseek-ai/dsh": ">=0.2.0-0 <0.3.0-0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh": {
@@ -88,7 +88,7 @@
       ]
     },
     "engines": {
-      "dsh": ">=0.2.0 <0.3.0"
+      "dsh": ">=0.2.0-0 <0.3.0-0"
     }
   }
 }

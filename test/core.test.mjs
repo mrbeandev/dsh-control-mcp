@@ -239,3 +239,56 @@ describe('wait fallback', () => {
     assert.equal(value.error, 'no API key');
   });
 });
+
+describe('DSH 0.2.1 fallbacks (no session/state or session/wait; page needs throughSeq)', () => {
+  function oldBridge() {
+    const bridge = fakeBridge();
+    const descriptors = bridge.list()
+      .filter(d => !(d.namespace === 'session' && ['state', 'wait'].includes(d.method)))
+      .map(d => d.namespace === 'session' && d.method === 'page'
+        ? { ...d, parameters: [{ ...d.parameters[0], codec: { mode: 'strict', jsonSchema: { type: 'object', required: ['address', 'throughSeq'] } } }] }
+        : d);
+    let running = true;
+    bridge.list = () => descriptors;
+    bridge.invoke = async (ns, method, args) => {
+      bridge.calls.push({ ns, method, args });
+      const ep = `${ns}/${method}`;
+      if (ep === 'session/list') { const row = { sessionId: 's1', running, projections: { asOfSeq: running ? 4 : 18 } }; running = false; return { items: [row] }; }
+      if (ep === 'session/prompt') return { accepted: true };
+      if (ep === 'session/page') {
+        if (!Number.isFinite(args.request.throughSeq)) throw Object.assign(new Error('boundary'), { code: 'gateway/input-invalid' });
+        return { records: [
+          { type: 'event', event: { seq: 8, type: 'user/message', data: { role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'hi' }] } } },
+          { type: 'event', event: { seq: 17, type: 'assistant/message', data: { role: 'assistant', content: [{ type: 'text', text: 'hello' }] } } },
+        ] };
+      }
+      throw Object.assign(new Error(`no ${ep}`), { code: 'gateway/invocation-unavailable' });
+    };
+    return bridge;
+  }
+
+  it('reads history with throughSeq from the session projection', async () => {
+    const bridge = oldBridge();
+    const value = await runTool(bridge, 'dsh_read_session', { sessionId: 's1' });
+    assert.deepEqual(value.messages.map(m => m.text), ['hi', 'hello']);
+    assert.equal(bridge.calls.find(c => c.method === 'page').args.request.throughSeq, 4);
+  });
+
+  it('waits by polling session/list and reads the reply from the page', async () => {
+    const bridge = oldBridge();
+    const value = await runTool(bridge, 'dsh_send_prompt', { sessionId: 's1', text: 'hi', wait: true, timeoutMs: 5000 });
+    assert.equal(value.reason, 'idle');
+    assert.equal(value.reply, 'hello');
+    assert.ok(!bridge.calls.some(c => c.method === 'wait' || c.method === 'state'));
+  });
+});
+
+describe('schemas on DSH 0.2.0 (no precomputed jsonSchema)', () => {
+  it('derives argument schemas from the codec parser', () => {
+    const parser = { toJSONSchema: () => ({ $schema: 'x', type: 'object', properties: { sessionId: { type: 'string' } }, required: ['sessionId'] }) };
+    const schema = inputSchemaFor({ parameters: [{ wire: 'request', source: 'json', codec: { mode: 'strict', create: () => parser } }] });
+    assert.deepEqual(schema.properties.request, { type: 'object', properties: { sessionId: { type: 'string' } }, required: ['sessionId'] });
+    const broken = inputSchemaFor({ parameters: [{ wire: 'x', source: 'json', codec: { create: () => { throw new Error('no'); } } }] });
+    assert.deepEqual(broken.properties.x, {});
+  });
+});
