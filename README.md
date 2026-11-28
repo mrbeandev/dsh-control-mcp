@@ -6,6 +6,7 @@ Control [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![DSH](https://img.shields.io/badge/DSH-0.2.0--rc.1%20%E2%86%92%20%3C0.3.0-informational.svg)](#supported-dsh-versions)
 [![Check](https://github.com/mrbeandev/dsh-control-mcp/actions/workflows/check.yml/badge.svg)](https://github.com/mrbeandev/dsh-control-mcp/actions/workflows/check.yml)
+[![M8ven Score](https://m8ven.ai/badge/mcp/mrbeandev-dsh-control-mcp-g2w9ga?v=bec14d640395728ccc6282305ded6632)](https://m8ven.ai/mcp/mrbeandev-dsh-control-mcp-g2w9ga?s=readme)
 
 - **Source code:** [github.com/mrbeandev/dsh-control-mcp](https://github.com/mrbeandev/dsh-control-mcp)
 - **npm package:** [npmjs.com/package/dsh-control-mcp](https://www.npmjs.com/package/dsh-control-mcp)
