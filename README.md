@@ -16,7 +16,8 @@ Once you switch it on, an MCP client (Claude Code, Claude Desktop, Codex, Cursor
 - **MCP server**: Streamable HTTP at `/dsh-control-mcp/mcp`, plus a bundled stdio bridge (`npx -y dsh-control-mcp`).
 - **HTTP API**: JSON and Server-Sent Events at `/dsh-control-mcp/api/v1`.
 - **Off by default.** Turn each surface on in **Plugins → dsh-control-mcp**; changes apply at once.
-- **One bearer token** for both, kept in the DSH credential store. Show, copy and rotate it on the plugin page.
+- **Multiple API keys**, one per client, each with its own token, name, MCP/API switches and optional expiry. Disable, rotate or delete any key without touching the others.
+- **Scoped keys** reach only the workspaces and chats you pick, read only or read and prompt. Everything else is invisible to them, in every list and every call (DSH 0.2.1+).
 - **Read-only mode** and **blocked endpoint patterns** limit what clients may do.
 
 ## Supported DSH versions
@@ -44,6 +45,8 @@ What differs between versions:
 | `dsh_send_prompt` with `wait` | ✅ polls `session/list` | ✅ polls `session/list` | ✅ native `session/wait` |
 | Calls run as a dedicated peer that never answers approvals | — (runs as the operator) | ✅ | ✅ |
 | Long detail page under Plugins | README only | README only | ✅ |
+| Full-access API keys | ✅ | ✅ | ✅ |
+| Scoped API keys (chosen workspaces and chats) | ❌ refused | ✅ | ✅ |
 
 Each harness version exposes its own set of endpoints; `dsh_list_endpoints` always shows what *your* DSH offers.
 
@@ -58,6 +61,43 @@ dsh plugin --profile web add dsh-control-mcp
 Or open **Plugins → Add plugin** in the GUI and enter `dsh-control-mcp`. Restart DSH if the plugin page does not appear.
 
 See [Supported DSH versions](#supported-dsh-versions).
+
+## API keys and scopes
+
+Open **Plugins → dsh-control-mcp → API keys → New key**. Each key has:
+
+| Setting | Choices |
+|---|---|
+| Name | Any label, e.g. "Claude on my phone" |
+| Surfaces | MCP, HTTP API, or both |
+| Access | **Only chosen workspaces and chats**, or **Full access to this harness** |
+| Inside its chats | **Read only** (history, state, replies), or **Read and prompt** (also send messages, stop, rename, start chats in its workspaces) |
+| Workspaces | Each chosen workspace includes its current chats **and chats added to it later** |
+| Chats | Individual chats, from any workspace |
+| Expires | Optional date |
+
+The token is shown **once** when you create or rotate a key; the harness stores only its SHA-256 fingerprint. Changes to a key (narrowing its scope, disabling it, expiry) apply to the very next request.
+
+### How scoping is enforced
+
+A scoped key does not run as you. It runs as its own principal (`dsh-control-key`), and DSH's own remote-access engine, the one that confines Liveshare viewers, decides every call. Every session and workspace endpoint names the resource it touches, and DSH checks it before the call runs. List and stream endpoints (`session/list`, `session/search`, `session/control`, `workspace/follow`) filter each item, so a scoped key never even learns that other chats exist. The plugin adds a second, earlier check with clear error messages, and it never offers a scoped key a tool it cannot use.
+
+What a scoped key can reach:
+
+| | Read only | Read and prompt |
+|---|---|---|
+| Model and provider catalogs, agent presets | ✅ | ✅ |
+| Its chats: list, history, state, wait, follow, goals, commands, skills, terminal list | ✅ | ✅ |
+| Its chats: send prompts, steer, stop, rename, choose model, edit queue, upload attachments | — | ✅ |
+| Start new chats inside its workspaces | — | ✅ |
+| Other chats and workspaces | ❌ invisible | ❌ invisible |
+| Plugins, settings, credentials, accounts, schedules, jobs, terminals (create), workspace create/delete | ❌ | ❌ |
+
+Use a full-access key for harness-wide administration. On DSH 0.2.0, which has no remote-access engine, scoped keys are refused with a clear error and full-access keys keep working.
+
+### Owner token
+
+The plugin page also shows a built-in **owner token** with full access, the token from version 0.1. It keeps working; prefer named keys so you can scope and revoke each client.
 
 ## Turn it on
 
@@ -127,7 +167,7 @@ In read-only mode, write tools are hidden and write calls are refused.
 
 ## HTTP API
 
-Every request needs `Authorization: Bearer <token>`. Responses are `{"ok": true, "value": …}` or `{"ok": false, "error": {"code", "message"}}` with a matching HTTP status.
+Every request needs `Authorization: Bearer <token>`: an API key enabled for the HTTP API, or the owner token. Responses are `{"ok": true, "value": …}` or `{"ok": false, "error": {"code", "message"}}` with a matching HTTP status.
 
 | Method and path | Purpose |
 |---|---|
@@ -156,7 +196,8 @@ Endpoint arguments are named exactly as the harness declares them. Check `GET �
 
 - **Full control means full control.** A prompt can run tools and shell commands. Anyone with the token, and network access to DSH, can do what you can do in the GUI. Treat the token like a password, rotate it if it leaks, and prefer read-only mode when a client only needs to look.
 - Both surfaces are off until you turn them on, and turning one off takes effect on the next request.
-- Tokens are 256-bit random values compared in constant time. The plugin page reads the token through an owner-only route that accepts only your signed-in DSH browser session from the same origin.
+- Tokens are 256-bit random values. Key tokens are stored only as SHA-256 fingerprints and shown once; the owner token is compared in constant time. Key management and the owner token are served only to your signed-in DSH browser session from the same origin; bearer tokens, even full-access ones, cannot create or list keys.
+- Scoped keys are confined by DSH's remote-access engine, not only by this plugin. They run as their own principal, never as the owner.
 - Requests with a cross-site `Origin` are refused, so a web page you visit cannot use the API even if it guesses the URL.
 - Calls run as a dedicated in-process owner peer that **never answers approvals or questions**; those still appear in the GUI. (`userQuestions/answer` remains callable explicitly.)
 - DSH binds to loopback by default. For remote clients use an SSH tunnel or DSH's own `trustedHosts`/TLS options. Do not expose it publicly without TLS.
@@ -171,7 +212,8 @@ The Host plugin (`index.mjs`) registers one prefix route, `/dsh-control-mcp`, on
 | npm package, bundle, Loader entry id/name, Host plugin name | `dsh-control-mcp` |
 | Client module id and `plugins.bundle.config` key | `dsh-control-mcp` |
 | Web route prefix | `/dsh-control-mcp` |
-| Credential record | `dsh-control-mcp/access-token` (grant) |
+| Credential records | `dsh-control-mcp/access-token` (owner token), `dsh-control-mcp/api-keys` (key fingerprints and scopes) |
+| Remote-access principal | `dsh-control-key` (scoped keys), roles `dsh-control-mcp:*` |
 | Config fields (all volatile) | `mcpEnabled`, `apiEnabled`, `readOnly`, `exposeAllEndpoints`, `blockedEndpoints`, `maxResultBytes` |
 | Log prefix | `dsh-control-mcp:` |
 | Injected Host services | `typert`, `typertGateway`, `connection`, `webServer`; optional `credentials`, `connection.authentication` (DSH 0.2.3+) |
@@ -183,7 +225,8 @@ The Host plugin (`index.mjs`) registers one prefix route, `/dsh-control-mcp`, on
 |---|---|
 | `index.mjs` | Host entry: Config, token store, gateway bridge, route registration. |
 | `lib/core.mjs` | Transport-independent catalog, policy, curated tools and MCP JSON-RPC. |
-| `lib/http.mjs` | HTTP routing, auth, MCP Streamable HTTP, REST and SSE. |
+| `lib/http.mjs` | HTTP routing, auth, MCP Streamable HTTP, REST and SSE, key management routes. |
+| `lib/access.mjs` | API key registry, scoped roles and the remote-access policy. |
 | `client/index.mjs` | Plugin page source (source of truth). |
 | `lib/client.js` | **Generated** by `npm run build` from `client/index.mjs`. Do not edit. |
 | `bin/dsh-control-mcp.mjs` | stdio bridge. |
@@ -193,7 +236,7 @@ The Host plugin (`index.mjs`) registers one prefix route, `/dsh-control-mcp`, on
 ```sh
 npm run verify     # build client bundle, unit tests, release gate (metadata, identities, packed files)
 npm pack --dry-run
-scripts/version-matrix.sh ./dsh-control-mcp-0.1.0.tgz /path/to/dsh/bin [port]   # one DSH version, end to end
+scripts/version-matrix.sh ./dsh-control-mcp-X.Y.Z.tgz /path/to/dsh/bin [port]   # one DSH version: page, live and scope-isolation tests
 ```
 
 `LOCAL-SETUP.md` covers testing against a disposable DSH profile, including the live MCP/API smoke test (`npm run test:live`) and the headless-Chrome page test (`npm run test:e2e`).

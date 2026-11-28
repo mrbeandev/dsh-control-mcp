@@ -74,9 +74,9 @@ check(bundle.includes(createClientPlugin.toString()), 'lib/client.js is stale: r
 
 // ── forbidden mechanisms and private details in source ──────────────────────
 const listed = dir => readdirSync(join(root, dir)).filter(file => file.endsWith('.mjs')).map(file => `${dir}/${file}`);
-const sources = ['index.mjs', 'lib/core.mjs', 'lib/http.mjs', 'client/index.mjs', 'bin/dsh-control-mcp.mjs', ...listed('scripts'), ...listed('test')];
+const sources = ['index.mjs', 'lib/core.mjs', 'lib/http.mjs', 'lib/access.mjs', 'client/index.mjs', 'bin/dsh-control-mcp.mjs', ...listed('scripts'), ...listed('test')];
 // Host runtime: never reaches out to the network on its own.
-const hostRuntime = new Set(['index.mjs', 'lib/core.mjs', 'lib/http.mjs']);
+const hostRuntime = new Set(['index.mjs', 'lib/core.mjs', 'lib/http.mjs', 'lib/access.mjs']);
 for (const file of sources) {
   const text = readFileSync(join(root, file), 'utf8');
   if (/\/home\/[a-z]|\/mnt\/main_disk|\/Users\/[A-Za-z]|C:\\\\Users/.test(text)) problems.push(`${file}: contains an absolute user path`);
@@ -97,6 +97,15 @@ for (const file of sources) {
 const client = readFileSync(join(root, 'client/index.mjs'), 'utf8');
 for (const match of client.matchAll(/fetch\(([^,)]+)/g)) check(/ROUTE/.test(match[1]), `client/index.mjs: fetch must target the plugin's own route (${match[1]})`);
 
+// Every relative import of the Host runtime must be in the package `files`.
+for (const file of hostRuntime) {
+  const text = readFileSync(join(root, file), 'utf8');
+  for (const match of text.matchAll(/from '(\.\.?\/[^']+)'/g)) {
+    const target = join(dirname(join(root, file)), match[1]).slice(root.length + 1);
+    check(pkg.files.includes(target), `${file} imports ${target}, which package.json "files" does not include`);
+  }
+}
+
 // ── packed file list ────────────────────────────────────────────────────────
 let packed = [];
 try {
@@ -106,7 +115,7 @@ try {
   problems.push(`npm pack --dry-run failed: ${error.message}`);
 }
 if (packed.length > 0) {
-  const required = ['index.mjs', 'lib/core.mjs', 'lib/http.mjs', 'lib/client.js', 'client/index.mjs', 'bin/dsh-control-mcp.mjs', 'locale/en.json', 'locale/zh.json', 'docs/DETAIL.md', 'icon.svg', 'package.json', 'README.md', 'LICENSE', 'cordis.patch.yml'];
+  const required = ['index.mjs', 'lib/core.mjs', 'lib/http.mjs', 'lib/access.mjs', 'lib/client.js', 'client/index.mjs', 'bin/dsh-control-mcp.mjs', 'locale/en.json', 'locale/zh.json', 'docs/DETAIL.md', 'icon.svg', 'package.json', 'README.md', 'LICENSE', 'cordis.patch.yml'];
   for (const file of required) check(packed.includes(file), `packed artifact is missing ${file}`);
   const forbidden = /\.(jsonl|tgz|log|png|yaml)$|(^|\/)(test|scripts|fixtures|\.private|\.env|\.cache|\.e2e|\.github)(\/|$)|\.npmrc$|LOCAL-SETUP\.md$|RELEASE\.md$|\.credentials/;
   for (const file of packed) check(!forbidden.test(file), `packed artifact must not contain ${file}`);

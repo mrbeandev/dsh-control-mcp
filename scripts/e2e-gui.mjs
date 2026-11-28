@@ -221,7 +221,7 @@ try {
       await sleep(800);
       const overflow = await evaluate(`${PAGE} ? ${PAGE}.scrollWidth - ${PAGE}.clientWidth : -1`);
       check('narrow layout does not overflow horizontally', overflow >= 0 && overflow <= 2, `overflow ${overflow}px`);
-      await shot('04-narrow');
+      await shot('06-narrow');
       await send('Emulation.clearDeviceMetricsOverride');
     }
 
@@ -230,6 +230,74 @@ try {
     await sleep(200);
     await clickText('Save');
     await sleep(800);
+    // ── API keys: create a scoped key by clicking, then prove its token is confined ──
+    const scopedSupported = await evaluate(`fetch('/${PACKAGE}/keys', { credentials: 'same-origin' }).then(r => r.json()).then(b => b.value.scopedSupported)`);
+    if (!scopedSupported) {
+      check('DSH without access control: the page says scoped keys need 0.2.1+', await waitFor(`/scoped keys need DSH 0\\.2\\.1/i.test(${PAGE}.innerText)`, 5000));
+    } else {
+    // The page masks the token; read the real one through the owner-only route, from the page itself.
+    const ownerToken = await evaluate(`fetch('/${PACKAGE}/token', { credentials: 'same-origin' }).then(r => r.json()).then(b => b.value.token)`);
+    const ownerApi = async (endpoint, args) => (await fetch(`${origin}/${PACKAGE}/api/v1/call/${endpoint}`, { method: 'POST', headers: { authorization: `Bearer ${ownerToken}`, 'content-type': 'application/json' }, body: JSON.stringify(args) })).json();
+    const scratchDir = `/tmp/dshc-e2e-ws-${Date.now()}`;
+    await (await import('node:fs')).promises.mkdir(scratchDir, { recursive: true });
+    const wsMade = await ownerApi('workspace/create', { request: { path: scratchDir } });
+    const wsId = wsMade.value?.workspace?.workspaceId;
+    const sA = (await ownerApi('session/create', { request: { workspaceId: wsId } })).value?.sessionId;
+    const sB = (await ownerApi('session/create', { request: { cwd: scratchDir } })).value?.sessionId;
+    for (const [id, title] of [[sA, 'E2E allowed chat'], [sB, 'E2E hidden chat']]) {
+      const renamed = await ownerApi('session/rename', { request: { sessionId: id, title } });
+      if (renamed.ok !== true) console.log(`rename ${id}: ${JSON.stringify(renamed).slice(0, 300)}`);
+    }
+    check('key fixtures created', Boolean(wsId && sA && sB));
+    await evaluate(`[...${PAGE}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Refresh chats')?.click()`);
+    await sleep(800);
+    check('"New key" opens the editor', await evaluate(`(() => { const b = [...${PAGE}.querySelectorAll('button')].find(b => b.textContent.trim() === 'New key'); b?.click(); return !!b; })()`) && await waitFor(`!!${PAGE}.querySelector('[data-dsh-control-mcp-key-editor]')`, 5000));
+    const EDITOR = `${PAGE}.querySelector('[data-dsh-control-mcp-key-editor]')`;
+    check('editor blocks saving without a name or scope', await evaluate(`[...${EDITOR}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Create key').disabled === true && /Give the key a name/.test(${EDITOR}.innerText)`));
+    await evaluate(`(() => { const i = document.getElementById('dsh-control-mcp-key-name'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'E2E scoped reader'); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+    await sleep(200);
+    check('editor asks for a scope when none is chosen', await evaluate(`/Choose at least one workspace or chat/.test(${EDITOR}.innerText)`));
+    // The chat list loads with the page; reopen the editor after a refresh until the fixtures appear.
+    for (let i = 0; i < 10 && !(await evaluate(`/E2E allowed chat/.test(${EDITOR}?.innerText ?? '')`)); i += 1) {
+      await evaluate(`[...${EDITOR}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Cancel')?.click()`);
+      await evaluate(`[...${PAGE}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Refresh chats')?.click()`);
+      await sleep(700);
+      await evaluate(`[...${PAGE}.querySelectorAll('button')].find(b => b.textContent.trim() === 'New key')?.click()`);
+      await sleep(300);
+      await evaluate(`(() => { const i = document.getElementById('dsh-control-mcp-key-name'); if (!i) return; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'E2E scoped reader'); i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+      await sleep(200);
+    }
+    await evaluate(`${EDITOR}?.scrollIntoView({ block: 'start' })`);
+    await sleep(300);
+    await shot('04-key-editor');
+    if (process.env.DSH_E2E_DEBUG) console.log('editor:', JSON.stringify(await evaluate(`${EDITOR}.innerText`)).slice(0, 1200));
+    const picked = await evaluate(`(() => { const group = ${EDITOR}.querySelector('[role=group][aria-label="Chats"]'); const row = [...group.querySelectorAll('label')].find(l => l.textContent.includes('E2E allowed chat')); row?.querySelector('input').click(); return !!row; })()`);
+    check('the chat picker lists chats by title', picked);
+    await sleep(200);
+    await evaluate(`[...${EDITOR}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Create key').click()`);
+    check('creating shows the token once with client setup', await waitFor(`!!${PAGE}.querySelector('[data-dsh-control-mcp-new-token]')`, 8000));
+    const keyToken = await evaluate(`${PAGE}.querySelector('input[aria-label="New key token"]').value`);
+    await evaluate(`${PAGE}.querySelector('[data-dsh-control-mcp-keys]')?.scrollIntoView({ block: 'start' })`);
+    await sleep(300);
+    await shot('05-key-created');
+    const keyList = async () => (await (await fetch(`${origin}/${PACKAGE}/api/v1/call/session/list`, { method: 'POST', headers: { authorization: `Bearer ${keyToken}`, 'content-type': 'application/json' }, body: '{"_request":{}}' })).json());
+    const seen = (await keyList()).value?.items?.map(i => i.sessionId) ?? [];
+    check('the new key sees only the chosen chat', seen.length === 1 && seen[0] === sA, `${seen.length} sessions`);
+    const hidden = await fetch(`${origin}/${PACKAGE}/api/v1/call/session/page`, { method: 'POST', headers: { authorization: `Bearer ${keyToken}`, 'content-type': 'application/json' }, body: JSON.stringify({ request: { address: { kind: 'session', sessionId: sB }, throughSeq: 0, maxMessages: 1 } }) });
+    check('the new key is refused the other chat', hidden.status === 403);
+    await evaluate(`[...${PAGE}.querySelectorAll('button')].find(b => b.textContent.trim() === 'Done')?.click()`);
+    check('the key row shows its scope summary', await waitFor(`(${PAGE}.querySelector('[data-key-name="E2E scoped reader"]')?.innerText ?? '').includes('Read only · 1 chat')`, 5000));
+    check('the token is not shown again after Done', !(await evaluate(`${PAGE}.innerText`)).includes(keyToken));
+    await evaluate(`[...${PAGE}.querySelector('[data-key-name="E2E scoped reader"]').querySelectorAll('button')].find(b => b.textContent.trim() === 'Disable').click()`);
+    check('Disable shows a badge', await waitFor(`/Disabled/.test(${PAGE}.querySelector('[data-key-name="E2E scoped reader"]')?.innerText ?? '')`, 5000));
+    check('a disabled key is refused at once', (await fetch(`${origin}/${PACKAGE}/api/v1/call/session/list`, { method: 'POST', headers: { authorization: `Bearer ${keyToken}`, 'content-type': 'application/json' }, body: '{"_request":{}}' })).status === 401);
+    await evaluate(`[...${PAGE}.querySelector('[data-key-name="E2E scoped reader"]').querySelectorAll('button')].find(b => b.textContent.trim() === 'Delete').click()`);
+    check('Delete removes the key row', await waitFor(`!${PAGE}.querySelector('[data-key-name="E2E scoped reader"]')`, 5000));
+    for (const id of [sA, sB]) await ownerApi('workspace/archiveSession', { request: { sessionId: id } }).catch(() => {});
+    if (wsId) await ownerApi('workspace/delete', { request: { workspaceId: wsId } }).catch(() => {});
+    await (await import('node:fs')).promises.rm(scratchDir, { recursive: true, force: true });
+    }
+
     await toggle('mcpEnabled', false);
     await toggle('apiEnabled', false);
     const off = await status();

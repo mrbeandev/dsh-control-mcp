@@ -1,7 +1,7 @@
 {
   "name": "dsh-control-mcp",
-  "version": "0.1.0",
-  "description": "Control DeepSeek Harness itself from MCP clients and an opt-in HTTP API: sessions, prompts, workspaces, models, plugins, schedules and every other Web UI action.",
+  "version": "0.2.0",
+  "description": "Control DeepSeek Harness itself from MCP clients and an opt-in HTTP API, with multiple API keys scoped to chosen workspaces and chats.",
   "author": "mrbeandev and contributors",
   "license": "MIT",
   "type": "module",
@@ -22,6 +22,7 @@
     "index.mjs",
     "lib/core.mjs",
     "lib/http.mjs",
+    "lib/access.mjs",
     "lib/client.js",
     "client/index.mjs",
     "bin/dsh-control-mcp.mjs",
@@ -66,7 +67,8 @@
     "verify": "npm run build && npm test && node scripts/check-release.mjs",
     "check": "npm run verify && npm pack --dry-run",
     "prepack": "npm run build && npm test",
-    "prepublishOnly": "node scripts/check-release.mjs"
+    "prepublishOnly": "node scripts/check-release.mjs",
+    "test:scope": "node scripts/scope-smoke.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": ">=0.2.0-0 <0.3.0-0"

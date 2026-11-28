@@ -22,6 +22,15 @@ Lets MCP clients and other programs drive this DeepSeek Harness through the same
 
 Every call needs `Authorization: Bearer <token>`. **Rotate** issues a new token and invalidates the old one.
 
+## API keys and scopes
+
+Create one key per client under **API keys → New key**. A key has a name, MCP and/or HTTP API access, an optional expiry, and either:
+
+- **Full access** to this harness, or
+- **Only chosen workspaces and chats**: a workspace includes its current chats and chats added later. Pick **Read only** or **Read and prompt**.
+
+A scoped key cannot see, list or touch any other chat, and cannot reach plugins, settings, credentials or other harness-wide actions. DSH's own access control enforces this (DSH 0.2.1 or later). The token is shown once; disable, rotate or delete a key at any time.
+
 ## Limit what clients may do
 
 - **Read-only mode** refuses every call that changes harness state.

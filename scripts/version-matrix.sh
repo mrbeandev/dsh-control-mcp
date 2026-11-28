@@ -46,3 +46,12 @@ REV="$(rpc settings/describe '{}' | node -e "let s='';process.stdin.on('data',c=
 rpc settings/mutate "{\"ns\":\"dsh-control-mcp\",\"ops\":[{\"op\":\"set\",\"path\":[\"mcpEnabled\"],\"value\":true},{\"op\":\"set\",\"path\":[\"apiEnabled\"],\"value\":true}],\"expectedRevision\":$REV}" >/dev/null
 TOKEN="$(curl -s -b "$JAR" "$BASE/dsh-control-mcp/token" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>console.log(JSON.parse(s).value.token))")"
 DSH_CONTROL_BASE="$BASE" DSH_CONTROL_TOKEN="$TOKEN" node "$ROOT/scripts/live-smoke.mjs"
+SCOPED="$(curl -s -b "$JAR" "$BASE/dsh-control-mcp/keys" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>console.log(JSON.parse(s).value.scopedSupported))")"
+if [[ "$SCOPED" == "true" ]]; then
+  DSH_E2E_URL="$URL" node "$ROOT/scripts/scope-smoke.mjs"
+else
+  echo "ℹ scoped keys not supported by this DSH version; checking they are refused"
+  KEY="$(curl -s -b "$JAR" -H 'content-type: application/json' -d '{"name":"scoped","mode":"scoped","sessions":["session-x"]}' "$BASE/dsh-control-mcp/keys" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>console.log(JSON.parse(s).value.token))")"
+  CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $KEY" -H 'content-type: application/json' -d '{"_request":{}}' "$BASE/dsh-control-mcp/api/v1/call/session/list")"
+  [[ "$CODE" == "403" ]] && echo "✔ scoped key refused on this version (403)" || { echo "✖ scoped key answered $CODE on a version without access control"; exit 1; }
+fi

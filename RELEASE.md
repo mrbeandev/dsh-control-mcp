@@ -1,6 +1,33 @@
 # Release checklist
 
-## Current candidate: 0.1.0 (not published)
+## Current candidate: 0.2.0 (not published)
+
+Adds multiple API keys with per-key scopes.
+
+- Each key: name, MCP/API switches, expiry, disable, rotate, delete. Tokens are
+  stored as SHA-256 fingerprints only and shown once.
+- Scoped keys reach chosen workspaces (current and future chats) and/or
+  individual chats, read only or read and prompt. Enforced by DSH's
+  remote-access engine through a `dsh-control-key` principal policy, plus a
+  plugin pre-check. On DSH 0.2.0 (no engine) scoped keys are refused.
+- The 0.1 owner token keeps working unchanged.
+- Release gate: every relative Host import must be in `files` (caught a
+  missing `lib/access.mjs` in the packed artifact during development).
+
+### Version matrix for 0.2.0 (2026-11-28, `scripts/version-matrix.sh`, same tarball)
+
+| DSH | Page test | Live MCP/API | Scope isolation |
+|---|---|---|---|
+| 0.2.3-alpha.2 | 50/50 | 28/28 | 43/43 |
+| 0.2.2-rc.5 | 50/50 | 28/28 | 43/43 |
+| 0.2.1-rc.5 | 50/50 | 27/27 | 43/43 |
+| 0.2.0-rc.2 | 38/38 | 27/27 | scoped keys refused (403) |
+
+`session/search` is disabled on these disposable profiles (session-query
+index `openAt: never`), so its per-key filtering was not observed live; the
+filter is DSH's own `remoteAccess.allows()` in `session/search`.
+
+## 0.1.0 (published 2026-11-27)
 
 First release. The npm name `dsh-mcp` was already taken by an unrelated MCP
 management plugin, so this package is `dsh-control-mcp` (`dsh-harness-mcp` and

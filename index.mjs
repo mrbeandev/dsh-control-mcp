@@ -20,12 +20,14 @@ import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_MAX_RESULT_BYTES } from './lib/core.mjs';
 import { createHttpHandler, ROUTE_PREFIX } from './lib/http.mjs';
+import { KEY_PRINCIPAL, createKeyRegistry, createScopedPolicy, keyPrincipal, scopedPreCheck } from './lib/access.mjs';
 
 export const name = 'dsh-control-mcp';
 export const inject = ['typert', 'typertGateway', 'connection', 'webServer'];
 const LOG_PREFIX = 'dsh-control-mcp:';
 export const TOKEN_SCOPE = 'dsh-control-mcp';
 export const TOKEN_ID = 'access-token';
+export const KEYS_ID = 'api-keys';
 export const SUPPORTED_DSH_RANGE = Object.freeze({ min: '0.2.0-0', below: '0.3.0-0' });
 
 const PLUGIN_VERSION = (() => {
@@ -105,6 +107,31 @@ export function newToken() {
   return `dshc_${randomBytes(32).toString('base64url')}`;
 }
 
+/** Read and write one grant record of this plugin in the harness credential store. */
+export function createGrantRecord(ctx, id) {
+  let key;
+  const store = () => ctx.get?.('credentials');
+  const keyOf = async () => {
+    if (key !== undefined) return key;
+    const { credentialKey } = await import(pathToFileURL(createRequire(join(harness.dir, 'package.json')).resolve('@deepseek-ai/dsh-credentials')).href);
+    key = credentialKey(TOKEN_SCOPE, id);
+    return key;
+  };
+  return {
+    available: () => store() !== undefined && harness !== undefined,
+    async read() {
+      if (store() === undefined || harness === undefined) return undefined;
+      const record = await store().readRecord(await keyOf());
+      return record?.kind === 'grant' ? record.payload : undefined;
+    },
+    async write(payload) {
+      if (store() === undefined || harness === undefined) return false;
+      await store().modifyRecord(await keyOf(), async () => ({ kind: 'grant', payload }));
+      return true;
+    },
+  };
+}
+
 /** Token persistence in the harness credential store, with an in-memory fallback. */
 export function createTokenStore(ctx, logger) {
   let token;
@@ -149,10 +176,12 @@ export function createTokenStore(ctx, logger) {
 }
 
 /** The bridge lib/core.mjs works on, over the live gateway. */
-export function createBridge(ctx, config, peer) {
+export function createBridge(ctx, config, peer, { caller, precheck } = {}) {
   // DSH 0.2.0 has no Peer API; its gateway runs calls without a peer as the operator (owner).
   const withPeer = peer === undefined ? {} : { peer };
   return {
+    ...(caller ? { caller } : {}),
+    ...(precheck ? { precheck } : {}),
     list: () => ctx.typert.local.list(),
     invoke: (namespace, method, args, signal) => ctx.typertGateway.invoke({ namespace, method, args, ...withPeer, ...(signal ? { signal } : {}) }),
     stream: (namespace, method, args, signal) => ctx.typertGateway.stream({ namespace, method, args, ...withPeer, ...(signal ? { signal } : {}) }),
@@ -175,6 +204,81 @@ export async function apply(ctx, config = {}) {
   const bridge = createBridge(ctx, config, peer);
   const tokens = createTokenStore(ctx, logger);
   await tokens.load();
+
+  // ── API keys ──
+  const keyRecord = createGrantRecord(ctx, KEYS_ID);
+  const keyPeers = new Map();
+  /** DSH 0.2.1+ ships the remote-access engine that confines scoped keys. */
+  const remoteAccess = () => ctx.get?.('remoteAccess');
+  const scopedSupported = () => typeof ctx.connection.createPeer === 'function' && typeof remoteAccess()?.registerPolicy === 'function';
+  const keys = createKeyRegistry({
+    persist: async list => {
+      if (!(await keyRecord.write({ version: 1, keys: list }))) logger.warn(`${LOG_PREFIX} no credential store; API keys last until restart`);
+    },
+    onChange: () => {
+      // Drop Peers of keys that changed mode or vanished, and recompute access.
+      for (const [id, entry] of keyPeers) {
+        const current = keys?.get(id);
+        if (current === undefined || current.mode !== entry.mode) { keyPeers.delete(id); entry.peer?.dispose?.(); }
+      }
+      try { remoteAccess()?.invalidate?.(); } catch { /* recomputed on the next decision anyway */ }
+    },
+  });
+  try {
+    keys.load(await keyRecord.read());
+  } catch (error) {
+    logger.warn(`${LOG_PREFIX} could not read stored API keys: ${error?.message ?? error}`);
+  }
+  if (typeof ctx.inject === 'function') {
+    // Scoped keys ride DSH's remote-access engine (0.2.1+), like Liveshare viewers.
+    ctx.inject(['remoteAccess', 'workspaceRegistry'], inner => {
+      const policy = createScopedPolicy(keys, () => inner.workspaceRegistry.list().map(workspace => ({ id: workspace.id, sessionIds: [...(workspace.sessionIds ?? [])] })));
+      // DSH reads bindings() afresh on every decision, so sessions that join a
+      // scoped workspace later are covered from their first call on.
+      inner.remoteAccess.registerPolicy(KEY_PRINCIPAL, policy);
+    });
+  }
+  /** A Peer per key: owner principal for full keys, the key principal for scoped ones. */
+  const peerFor = key => {
+    if (typeof ctx.connection.createPeer !== 'function') return undefined;
+    let entry = keyPeers.get(key.id);
+    if (entry === undefined || entry.peer?.signal?.aborted) {
+      const principal = key.mode === 'scoped' ? keyPrincipal(key) : { kind: 'owner' };
+      entry = { mode: key.mode, peer: ctx.connection.createPeer({ principal, interactions: 'none' }) };
+      keyPeers.set(key.id, entry);
+    }
+    return entry.peer;
+  };
+  ctx.effect(() => () => { for (const entry of keyPeers.values()) entry.peer?.dispose?.(); keyPeers.clear(); }, 'dsh-control-mcp: key peers');
+  const bridgeFor = caller => {
+    const key = keys.get(caller.keyId);
+    if (key === undefined) throw new Error('key vanished');
+    return createBridge(ctx, config, peerFor(key), {
+      caller: { keyName: caller.keyName, mode: caller.mode, access: caller.access },
+      precheck: endpoint => scopedPreCheck(keys.get(caller.keyId), endpoint),
+    });
+  };
+  /** Workspaces and sessions the key editor offers, read as the owner. */
+  const scopeOptions = async () => {
+    const out = { workspaces: [], sessions: [] };
+    try {
+      for (const workspace of ctx.get?.('workspaceRegistry')?.list?.() ?? []) {
+        out.workspaces.push({ id: workspace.id, title: workspace.title, path: workspace.path, sessionIds: [...(workspace.sessionIds ?? [])] });
+      }
+    } catch { /* registry unavailable */ }
+    try {
+      const value = await bridge.invoke('session', 'list', { _request: {} });
+      const rows = Array.isArray(value) ? value : value?.items ?? [];
+      for (const row of rows) {
+        // Subagent children belong to their parent chat; blank sessions stay
+        // selectable (a key may be prepared for a chat before its first prompt).
+        if (row.origin === 'subagent') continue;
+        const title = row.projections?.values?.title;
+        out.sessions.push({ id: row.sessionId, title: typeof title === 'string' && title.trim() ? title.trim() : 'Untitled session', cwd: row.cwd, updatedAt: row.updatedAt, running: row.running === true, blank: row.blank === true });
+      }
+    } catch { /* listed empty */ }
+    return out;
+  };
 
   /**
    * True for a request DSH itself admits as the owner: the signed-in browser
@@ -206,6 +310,10 @@ export async function apply(ctx, config = {}) {
   };
   const handler = createHttpHandler({
     bridge,
+    bridgeFor,
+    keys,
+    scopeOptions,
+    scopedSupported,
     getToken: tokens.get,
     rotateToken: tokens.rotate,
     isOwnerBrowser,
